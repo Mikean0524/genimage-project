@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GenImage Forensics</title>
+  <meta name="description" content="Detect AI-generated images, trace where they spread, and prepare a Cyber Cell report.">
+  <link rel="icon" href="data:,">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <a class="sr-only" href="#view">Skip to content</a>
+  <div class="shell">
+    <aside class="sidebar">
+      <a class="brand" href="#scan" aria-label="GenImage Forensics home">
+        <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
+          <rect width="34" height="34" rx="11" fill="#3461ff"/>
+          <path d="M9 13V9h4M21 9h4v4M25 21v4h-4M13 25H9v-4" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+          <circle cx="17" cy="17" r="4.6" fill="#fff"/>
+        </svg>
+        <span>
+          <span class="brand-name">GenImage Forensics</span><br>
+          <span class="brand-sub">Deepfake detection &amp; reporting</span>
+        </span>
+      </a>
+      <nav class="nav" aria-label="Main">
+        <a href="#scan" data-route="scan">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M4 12h16"/></svg>
+          <span>Scan<span class="lbl-long"> image</span></span>
+        </a>
+        <a href="#cases" data-route="cases">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          <span>Cases</span> <span class="count" id="case-count"></span>
+        </a>
+        <a href="#trace" data-route="trace">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="8" r="2.5"/><circle cx="10" cy="18" r="2.5"/><path d="M8.3 7l7.3.8M7 8.3l2.2 7.4M16.4 10l-4.6 6.2"/></svg>
+          <span>Source trace</span>
+        </a>
+        <a href="#report" data-route="report">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3l8 3v6c0 4.5-3.4 8-8 9-4.6-1-8-4.5-8-9V6z"/><path d="M12 8v5M12 16h.01"/></svg>
+          <span>Report<span class="lbl-long"> to Cyber Cell</span></span>
+        </a>
+        <a href="#automation" data-route="automation">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4 14h7l-1 8 9-12h-7z"/></svg>
+          <span>Auto<span class="lbl-long">-report</span></span>
+        </a>
+        <a href="#model" data-route="model">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 5-6"/></svg>
+          <span>Model<span class="lbl-long"> &amp; accuracy</span></span>
+        </a>
+      </nav>
+      <div class="sidebar-foot">
+        <strong>National cybercrime helpline</strong>
+        <div class="helpline">1930</div>
+        File online at <a href="https://cybercrime.gov.in" target="_blank" rel="noopener">cybercrime.gov.in</a>
+      </div>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <span class="status-dot" aria-hidden="true"></span>
+        <span class="env">Prototype — using sample data, not connected to the model</span>
+        <span class="spacer"></span>
+        <a class="icon-btn" href="#cases" aria-label="Open cases"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9zM10 20a2 2 0 0 0 4 0"/></svg><span class="ping"></span></a>
+        <span class="analyst"><span class="avatar" aria-hidden="true">AN</span> Analyst</span>
+      </header>
+      <main id="view" class="view" tabindex="-1"></main>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+  <script src="js/mock-data.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
