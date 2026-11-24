@@ -1,10 +1,9 @@
 """Local web server for the GenImage Forensics frontend.
 
-Serves ../frontend and exposes the trained classifier over HTTP. It uses only the
-Python standard library plus the packages already in requirements-ml.txt, and it
-imports the existing pipeline without modifying it.
+Serves ../frontend and exposes either the published frontier ONNX detector or
+the project's trained ResNet classifier over HTTP.
 
-    python server/app.py --checkpoint outputs/baseline/best.pt
+    python server/app.py
 
 Then open http://127.0.0.1:8000
 
@@ -30,9 +29,11 @@ from urllib.parse import unquote, urlparse
 
 ROOT = Path(__file__).resolve().parent.parent          # repository root
 FRONTEND = (ROOT / "frontend").resolve()
-DEFAULT_CHECKPOINT = ROOT / "outputs" / "baseline" / "best.pt"
-DEFAULT_METRICS = ROOT / "outputs" / "evaluation" / "metrics.json"
-FALLBACK_THRESHOLD = 0.2714381218                      # from outputs/EXPERIMENT_REPORT.md
+DEFAULT_CHECKPOINT = ROOT / "outputs" / "encoding_normalized" / "best.pt"
+DEFAULT_METRICS = ROOT / "outputs" / "encoding_normalized_eval" / "metrics.json"
+FRONTIER_MODEL = ROOT / "outputs" / "models" / "frontier" / "community_forensics_frontier_fp16.onnx"
+FRONTIER_THRESHOLD = 0.65
+FALLBACK_THRESHOLD = 0.5
 MAX_BYTES = 20 * 1024 * 1024
 GENERATOR_SIZES = {128, 256, 512, 1024}
 
@@ -42,7 +43,7 @@ class Predictor:
 
     def __init__(self, checkpoint: Path):
         sys.path.insert(0, str(ROOT / "src"))
-        from genimage_pipeline import create_model, model_modules  # existing code, unchanged
+        from genimage_pipeline import create_model, model_modules, normalize_encoding
 
         torch, _, _, _, models, transforms = model_modules()
         self.torch = torch
@@ -51,6 +52,8 @@ class Predictor:
         self.model.load_state_dict(state["state_dict"])
         self.model.eval()
         self.size = int(state["size"])
+        self.normalize_encoding = bool(state.get("normalize_encoding", False))
+        self.normalize_image = normalize_encoding
         self.info = {k: state.get(k) for k in ("architecture", "epoch", "best_val_roc_auc")}
         # Same transform as infer(): square resize, tensor, ImageNet normalisation.
         self.transform = transforms.Compose([
@@ -61,6 +64,8 @@ class Predictor:
         self.lock = threading.Lock()
 
     def score(self, image) -> float:
+        if self.normalize_encoding:
+            image = self.normalize_image(image)
         with self.lock, self.torch.inference_mode():
             logits = self.model(self.transform(image).unsqueeze(0))
             return float(logits.softmax(1)[0, 1].item())
@@ -95,6 +100,7 @@ def analyze(data: bytes, filename: str, predictor, threshold: float, model_name:
         # The same four fields `infer` prints
         "image": filename,
         "ai_score_uncalibrated": score,
+        "score_type": getattr(predictor, "score_type", "uncalibrated"),
         "assessment": "AI-generated" if score >= threshold else "real",
         "threshold": threshold,
         # Evidence and metadata for the UI
@@ -173,36 +179,54 @@ class Handler(BaseHTTPRequestHandler):
 
 def main(argv=None, predictor_factory=Predictor):
     parser = argparse.ArgumentParser(description="Serve the GenImage Forensics frontend with the trained model.")
-    parser.add_argument("--checkpoint", type=Path, default=DEFAULT_CHECKPOINT)
-    parser.add_argument("--metrics", type=Path, default=DEFAULT_METRICS,
+    parser.add_argument("--detector", choices=("frontier", "resnet"), default="frontier")
+    parser.add_argument("--checkpoint", type=Path, default=None)
+    parser.add_argument("--metrics", type=Path, default=None,
                         help="metrics.json from `evaluate`; its threshold is used when --threshold is not given")
     parser.add_argument("--threshold", type=float, default=None)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args(argv)
+    checkpoint = args.checkpoint or (FRONTIER_MODEL if args.detector == "frontier" else DEFAULT_CHECKPOINT)
 
     if args.threshold is not None:
         threshold, threshold_source = args.threshold, "--threshold"
+    elif args.detector == "frontier" and args.metrics is None:
+        threshold, threshold_source = FRONTIER_THRESHOLD, "published frontier threshold"
     else:
-        threshold, threshold_source = read_threshold(args.metrics)
+        threshold, threshold_source = read_threshold(args.metrics or DEFAULT_METRICS)
 
-    if not args.checkpoint.is_file():
-        parser.error(f"checkpoint not found: {args.checkpoint}\n"
-                     "Train first (see docs/RUN_PIPELINE.md) or pass --checkpoint path/to/best.pt")
-    print(f"Loading {args.checkpoint} …", flush=True)
-    predictor = predictor_factory(args.checkpoint)
+    if not checkpoint.is_file():
+        parser.error(f"model not found: {checkpoint}\nSee server/README.md for the model download command")
+    print(f"Loading {checkpoint} ...", flush=True)
+    if args.detector == "frontier":
+        sys.path.insert(0, str(ROOT / "src"))
+        from detectra_predictor import FrontierPredictor
+        predictor = FrontierPredictor(checkpoint)
+    else:
+        predictor = predictor_factory(checkpoint)
     info = getattr(predictor, "info", {}) or {}
 
     Handler.predictor = predictor
     Handler.threshold = threshold
     Handler.health = {
         "status": "ok",
-        "model": f"ResNet-50 ({info.get('architecture') or 'resnet50'}, epoch {info.get('epoch', '?')})",
-        "checkpoint": args.checkpoint.name,
+        "model": info.get("architecture") or args.detector,
+        "checkpoint": checkpoint.name,
         "input_size": getattr(predictor, "size", None),
+        "normalize_encoding": getattr(predictor, "normalize_encoding", False),
         "threshold": threshold,
         "threshold_source": threshold_source,
+        "score_type": getattr(predictor, "score_type", "uncalibrated"),
         "best_val_roc_auc": info.get("best_val_roc_auc"),
+        "evaluation": ({
+            "accuracy": 0.9262857142857143, "precision": 0.9869451697127938,
+            "recall": 0.864, "f1": 0.9213893967093236,
+            "rocAuc": 0.9860832653061224, "ap": 0.9880969345881176,
+            "fpr": 10 / 875, "fnr": 119 / 875,
+            "confusion": {"tn": 865, "fp": 10, "fn": 119, "tp": 756},
+            "count": 1750,
+        } if args.detector == "frontier" and checkpoint.resolve() == FRONTIER_MODEL.resolve() else None),
         "features": {"classification": True, "generator_attribution": False, "harm_assessment": False,
                      "source_tracing": False, "report_submission": False},
     }

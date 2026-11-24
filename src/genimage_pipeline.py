@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import io
 import json
 import os
 import platform
@@ -24,6 +25,16 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 
 LABELS = {"nature": 0, "real": 0, "ai": 1}
 EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"}
+JPEG_QUALITY = 85
+
+
+def normalize_encoding(image, quality=JPEG_QUALITY):
+    """Apply the same JPEG encoding to both classes before model transforms."""
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", quality=quality, subsampling=0)
+    buffer.seek(0)
+    with Image.open(buffer) as encoded:
+        return encoded.convert("RGB")
 
 
 def write_csv(path, rows, fields):
@@ -146,7 +157,7 @@ def model_modules():
     return torch, nn, DataLoader, Dataset, models, transforms
 
 
-def make_dataset(root, rows, training, size, Dataset, transforms):
+def make_dataset(root, rows, training, size, Dataset, transforms, normalize=False):
     class Images(Dataset):
         def __len__(self):
             return len(rows)
@@ -155,6 +166,8 @@ def make_dataset(root, rows, training, size, Dataset, transforms):
             row = rows[index]
             with Image.open(Path(root) / row["path"]) as source:
                 image = ImageOps.exif_transpose(source).convert("RGB")
+            if normalize:
+                image = normalize_encoding(image, random.randint(75, 95) if training else JPEG_QUALITY)
             return transform(image), int(row["label"]), row["path"]
 
     transform = transforms.Compose([
@@ -216,7 +229,7 @@ def train(args):
     if {r["sha256"] for r in train_rows} & {r["sha256"] for r in val_rows}:
         raise ValueError("Exact hash overlap between train and val")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    loaders = [DataLoader(make_dataset(args.data_root, rows, training, args.size, Dataset, transforms),
+    loaders = [DataLoader(make_dataset(args.data_root, rows, training, args.size, Dataset, transforms, args.normalize_encoding),
                           batch_size=args.batch_size, shuffle=training, num_workers=args.workers,
                           pin_memory=device.type == "cuda") for rows, training in ((train_rows, True), (val_rows, False))]
     model = create_model(models, not args.no_pretrained).to(device)
@@ -247,6 +260,7 @@ def train(args):
         if auc > best + 1e-5:
             best, stale = float(auc), 0
             torch.save({"state_dict": model.state_dict(), "size": args.size, "epoch": number,
+                        "normalize_encoding": args.normalize_encoding,
                         "best_val_roc_auc": best, "architecture": "resnet50"}, out / "best.pt")
         else:
             stale += 1
@@ -296,7 +310,8 @@ def evaluate(args):
     model.to(device)
     def run(split):
         rows = load_rows(args.manifest, split)
-        loader = DataLoader(make_dataset(args.data_root, rows, False, size, Dataset, transforms),
+        loader = DataLoader(make_dataset(args.data_root, rows, False, size, Dataset, transforms,
+                                         checkpoint.get("normalize_encoding", False)),
                             batch_size=args.batch_size, num_workers=args.workers)
         return rows, predict(model, loader, device, torch)
     val_rows, (vy, vs, _, _) = run("val")
@@ -351,6 +366,8 @@ def infer(args):
     model.eval()
     with Image.open(args.image) as source:
         image = ImageOps.exif_transpose(source).convert("RGB")
+    if checkpoint.get("normalize_encoding", False):
+        image = normalize_encoding(image)
     transform = transforms.Compose([transforms.Resize((checkpoint["size"],) * 2), transforms.ToTensor(),
                                     transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))])
     with torch.inference_mode():
@@ -379,6 +396,8 @@ def main():
     train_parser.add_argument("--seed", type=int, default=42)
     train_parser.add_argument("--limit", type=int, default=0, help="Balanced train pilot size; 0 means all")
     train_parser.add_argument("--no-pretrained", action="store_true", help="Only for pipeline checks, not the baseline")
+    train_parser.add_argument("--normalize-encoding", action="store_true",
+                              help="Re-encode both classes as JPEG; validation and inference use quality 85")
     evaluate_parser = sub.add_parser("evaluate")
     evaluate_parser.add_argument("--data-root", type=Path, default=os.environ.get("GENIMAGE_ROOT"))
     evaluate_parser.add_argument("--manifest", default="outputs/inspection/inventory.csv")

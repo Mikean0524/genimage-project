@@ -27,6 +27,16 @@ python src/genimage_pipeline.py train --data-root data/genimage_sample --epochs 
 
 The pilot validates plumbing and is not a benchmark. Pretrained weights download on first use. CPU training may take many hours; CUDA mixed precision is automatic. Decrease `--batch-size` if memory is insufficient. Expect `epochs.csv`, `config.json`, `best.pt`, and `loss_curves.png`. The best checkpoint maximizes validation ROC-AUC. For comparisons, vary one hyperparameter per run and use distinct output folders.
 
+For this sample, train a new checkpoint with `--normalize-encoding` to reduce the JPEG/PNG class shortcut. Both labels are re-encoded as JPEG before resizing. Training uses randomly selected quality 75–95; validation, test, CLI inference, and the server use quality 85. Existing checkpoints retain their original preprocessing. This cannot undo artifacts already present in source JPEGs or prove generalization; compare on a new, independently sourced test set with matched formats and image sizes.
+
+```powershell
+python src/genimage_pipeline.py train --data-root data/genimage_sample --manifest outputs/inspection/inventory.csv --normalize-encoding --epochs 2 --out outputs/encoding_normalized
+python src/genimage_pipeline.py evaluate --data-root data/genimage_sample --manifest outputs/inspection/inventory.csv --checkpoint outputs/encoding_normalized/best.pt --out outputs/encoding_normalized_eval
+python server/app.py --detector resnet --checkpoint outputs/encoding_normalized/best.pt --metrics outputs/encoding_normalized_eval/metrics.json
+```
+
+The two-epoch normalized run selected epoch 2 (validation ROC-AUC 0.9801). On the same 1,750-image test partition used by the original baseline, its validation-selected threshold was 0.3633, test accuracy 91.2%, and confusion matrix `[[782, 93], [61, 814]]` (real/AI rows and columns). The original baseline had 90.8% accuracy and `[[752, 123], [38, 837]]`. False positives fell from 123 to 93, while missed AI images rose from 38 to 61. Because this test partition has now been reused for comparison, it is not an untouched benchmark for future model selection. The remaining source-format and size differences still require a better matched dataset and outside-image evaluation.
+
 After choosing the run by validation results, evaluate the test once:
 
 ```powershell

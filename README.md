@@ -1,5 +1,19 @@
 ﻿# GenImage project
 
+## Run the image detector
+
+From the repository root, install the server requirements, download the verified frontier model, and start the local server:
+
+```powershell
+python -m pip install -r requirements-server.txt
+python src/download_frontier_model.py
+python server/app.py
+```
+
+Open http://127.0.0.1:8000. The old project-trained ResNet remains available with `python server/app.py --detector resnet`. The frontier model uses a fixed 0.65 threshold and is a screening tool, not proof of image origin. See [server/README.md](server/README.md) for its measured results and source.
+
+## Original GenImage experiment
+
 Read [the project plan](docs/PROJECT_PLAN.md) before running stages. Task 1 inspection needs an explicit extracted dataset root:
 
 ```powershell

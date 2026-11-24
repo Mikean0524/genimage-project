@@ -59,6 +59,21 @@
         live.on = true;
         live.health = h;
         D.MODEL.threshold = h.threshold;
+        D.MODEL.name = h.model;
+        if (h.evaluation) {
+          D.MODEL.metrics = { ...D.MODEL.metrics, ...h.evaluation, throughput: null };
+          D.MODEL.confusion = h.evaluation.confusion;
+          D.MODEL.framework = "ONNX Runtime (CPU)";
+          D.MODEL.input = "384 × 384 center crop, ImageNet normalization";
+          D.MODEL.trainedOn = "Published frontier detector; local check on 1,750 GenImage-derived test images";
+          D.MODEL.trainingSummary = "Published model tested locally";
+          D.MODEL.limitations = [
+            "The local GenImage test set may overlap with the published model's training sources; it is not an independent estimate of performance.",
+            "The fixed threshold missed 119 of 875 generated images in this test. A real verdict can still be wrong.",
+            "Future generators, heavy editing, cropping, and recompression can change accuracy.",
+            "The detector assesses whole images; it cannot reliably identify small generated or edited regions."
+          ];
+        }
       }
     } catch (e) { /* no backend: stay in demo mode */ }
     return live;
@@ -66,11 +81,10 @@
 
   function buildSignals({ format, exif, width, height, isAI, demo }) {
     const out = [];
-    out.push({ level: format === "PNG" ? "warn" : "ok", text: `<b>${format || "Unknown"}</b> file. The current model partly relies on file format, so treat format alone as weak evidence.` });
+    out.push({ level: "ok", text: `<b>${format || "Unknown"}</b> file. File format alone does not establish image origin.` });
     out.push(exif ? { level: "ok", text: "<b>Camera metadata present</b> — still verify, metadata can be copied." }
                   : { level: "warn", text: "<b>No camera metadata</b> (EXIF) found — common for generated or re-shared images." });
-    if (width && width === height && [128, 256, 512, 1024].includes(width)) out.push({ level: "bad", text: `<b>${width}×${height}</b> square output matches a common generator resolution.` });
-    else out.push({ level: "ok", text: `<b>${width}×${height}</b> dimensions are not a typical generator size.` });
+    out.push({ level: "ok", text: `<b>${width}×${height}</b> pixels. Dimensions alone do not establish image origin.` });
     if (demo && isAI) out.push({ level: "bad", text: "<b>High-frequency artefacts</b> concentrated around face and hair boundaries." });
     return out;
   }

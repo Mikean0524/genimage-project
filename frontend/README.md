@@ -3,7 +3,7 @@
 Standalone UI for the GenImage project. Plain HTML, CSS and JavaScript: no build step, no dependencies.
 ## Run it
 
-**With your model** (real scores): from the repository root run `python server/app.py --checkpoint outputs/baseline/best.pt`
+**With the frontier detector** (real scores): from the repository root install and download it as described in `server/README.md`, then run `python server/app.py`
 and open http://127.0.0.1:8000. See `server/README.md`.
 
 **Demo mode** (simulated scores): open `index.html` directly. The top bar says which mode you are in.
@@ -17,7 +17,7 @@ and open http://127.0.0.1:8000. See `server/README.md`.
 | `#trace` | Where copies were found, the probable origin, and a spread chart |
 | `#report` | Four-step Cyber Cell complaint package with validation and a copyable summary |
 | `#automation` | Auto-report rule: on/off, score threshold (default 95%), high-harm requirement, time to cancel, reporter contact, recent auto-reports |
-| `#model` | Real metrics from `outputs/EXPERIMENT_REPORT.md`, confusion matrix, pipeline status, limitations |
+| `#model` | Local test metrics for the connected model, confusion matrix, pipeline status, limitations |
 
 ## Files
 
@@ -38,7 +38,7 @@ All data goes through `window.GI_API` in `js/api.js`. On load, `init()` calls `/
 `analyzeImage(file)` must return at least the fields `infer` already prints:
 
 ```json
-{ "image": "...", "ai_score_uncalibrated": 0.94, "assessment": "AI-generated", "threshold": 0.2714381218 }
+{ "image": "...", "ai_score_uncalibrated": 0.94, "score_type": "published_bias_calibrated", "assessment": "AI-generated", "threshold": 0.65 }
 ```
 
 plus `sha256`, `width`, `height`, `format`, `size`, `exif_present`. With the real model, `generators` and

@@ -262,7 +262,7 @@
       <section class="verdict ${ai ? "is-ai" : "is-real"}">
         <div class="verdict-band">
           ${r.live ? `<div class="live-note">Scored by your model · ${esc(r.model)} · ${(r.inference_seconds * 1000).toFixed(0)} ms</div>` : `<div class="sim-note">Simulated result — the model server isn't running, so this is a placeholder score. Start server/app.py to use your model.</div>`}
-          <div class="verdict-kicker"><span>AI likelihood</span>
+          <div class="verdict-kicker"><span>AI detector score</span>
             <span class="tag tag-blue tag-plain">${diff >= 0 ? "+" : "−"}${Math.abs(diff).toFixed(3)} vs threshold</span></div>
           <div class="verdict-head"><div class="big-num">${bigPct(r.ai_score_uncalibrated)}</div></div>
           <div class="verdict-title">${ai ? "AI-generated" : "Real photograph"}</div>
@@ -284,7 +284,7 @@
           <button class="circ" data-act="copy-hash"><span class="c">${ICON.copy}</span>Copy hash</button>
           <button class="circ" data-act="new-scan"><span class="c">${ICON.plus}</span>New scan</button>
         </div>
-        <div class="caveat">Scores are uncalibrated. On the held-out test set this model wrongly flagged ${pct(D.MODEL.metrics.fpr, 1)} of real images, so never treat a single score as proof.</div>
+        <div class="caveat">On the local test set this model wrongly flagged ${pct(D.MODEL.metrics.fpr, 1)} of real images. A score is a screening signal, not proof of origin.</div>
       </section>
 
       ${ai && harm === "unknown" ? `<section class="harm medium">
@@ -889,7 +889,7 @@
     const M = D.MODEL, m = M.metrics, cm = M.confusion;
     view.innerHTML = `
       <div class="view-head">
-        <div><h1>Model &amp; accuracy</h1><p>How the detector was trained and how it performed on 1,750 held-out test images. Read the limitations before relying on any verdict.</p></div>
+        <div><h1>Model &amp; accuracy</h1><p>Local results on 1,750 labeled images. Read the limitations before relying on any verdict.</p></div>
       </div>
       <div class="stack">
         <div class="model-hero">
@@ -898,7 +898,7 @@
               <div class="verdict-kicker"><span>Test accuracy</span><span class="tag tag-blue tag-plain">ROC-AUC ${m.rocAuc.toFixed(3)}</span></div>
               <div class="verdict-head"><div class="big-num">${bigPct(m.accuracy)}</div></div>
               <div class="verdict-title" style="color:#fff">${esc(M.name)}</div>
-              <p>${esc(M.framework)} · input ${esc(M.input)} · 2 training epochs on CPU</p>
+              <p>${esc(M.framework)} · input ${esc(M.input)} · ${esc(M.trainingSummary || "2 training epochs on CPU")}</p>
             </div>
           </section>
           <section class="stats-card">
@@ -911,7 +911,7 @@
               <div><span>F1 score</span><b>${m.f1.toFixed(3)}</b></div>
               <div><span>Average precision</span><b>${m.ap.toFixed(3)}</b></div>
               <div><span>Threshold</span><b>${M.threshold.toFixed(4)}</b></div>
-              <div><span>Throughput</span><b>${m.throughput.toFixed(0)} img/s</b></div>
+              <div><span>Throughput</span><b>${m.throughput == null ? "Not measured" : `${m.throughput.toFixed(0)} img/s`}</b></div>
             </div>
           </section>
         </div>
@@ -933,13 +933,11 @@
             </ul></section>
         </div>
         <section class="panel"><div class="panel-head"><h3>Known limitations</h3></div>
-          <ul class="limits">
-            <li>In the training sample every real image is JPEG and every AI image is PNG, so the model may be detecting file format rather than generation artefacts.</li>
-            <li>${pct(m.fpr, 1)} of real images were flagged as AI. A verdict must be reviewed by a person before anyone is accused or a report is filed.</li>
-            <li>Trained on ${esc(M.trainedOn)}. Stable Diffusion 1.4 is not included, and no generator was held out, so performance on newer generators is unknown.</li>
-            <li>Not tested against recompression, resizing, blur or screenshots — the usual state of images shared on social media.</li>
-            <li>Detects fully generated images. Hand-edited or partially face-swapped photos may not be caught.</li>
-          </ul></section>
+          <ul class="limits">${(M.limitations || [
+            "The training sample has JPEG real images and PNG generated images, creating a format shortcut.",
+            "This model can flag real images and miss generated images. Review each verdict manually.",
+            "Generalization to newer generators and edited images is unknown."
+          ]).map((item) => `<li>${esc(item)}</li>`).join("")}</ul></section>
       </div>`;
   }
   // =====================================================================
@@ -1096,7 +1094,7 @@
               <div class="thr"><div class="big-num" id="thr-out">${(() => { const v = (A.threshold * 100).toFixed(1).split("."); return `${v[0]}<small>.${v[1]}%</small>`; })()}</div></div>
               <input type="range" class="range" id="a-thr" min="80" max="99.5" step="0.5" value="${(A.threshold * 100).toFixed(1)}" aria-label="Auto-report threshold">
               <div class="range-scale"><span>80%</span><span>Model's flag threshold is ${pct(D.MODEL.threshold, 1)}</span><span>99.5%</span></div>
-              <span class="hint">Scores are uncalibrated, so ${pct(A.threshold, 0)} here does not mean the model is ${pct(A.threshold, 0)} certain. Higher thresholds send fewer false reports.</span>
+              <span class="hint">A score of ${pct(A.threshold, 0)} does not mean the model is ${pct(A.threshold, 0)} certain. Higher thresholds send fewer false reports.</span>
             </div>
 
             <label class="check"><input type="checkbox" id="a-harm" ${A.requireHarm ? "checked" : ""}><span>Only when the image shows a real person with <b>high harm</b> (sexualised, face-swapped or used to threaten)</span></label>
