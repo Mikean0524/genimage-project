@@ -14,7 +14,7 @@ and open http://127.0.0.1:8000. See `server/README.md`.
 |---|---|
 | `#scan` | Upload or drop an image → staged examination → verdict, score against threshold, harm assessment, likely generator, signals, SHA-256 |
 | `#cases` | Searchable, filterable case list with a detail drawer |
-| `#trace` | Where copies were found, the probable origin, and a spread chart |
+| `#trace` | Real Google Lens exact matches with SerpApi or full and partial matches with Google Cloud Vision; otherwise links to manual Google Lens and Bing Visual Search uploads; no inferred origin or upload dates |
 | `#report` | Four-step Cyber Cell complaint package with validation and a copyable summary |
 | `#automation` | Auto-report rule: on/off, score threshold (default 95%), high-harm requirement, time to cancel, reporter contact, recent auto-reports |
 | `#model` | Local test metrics for the connected model, confusion matrix, pipeline status, limitations |
@@ -42,8 +42,7 @@ All data goes through `window.GI_API` in `js/api.js`. On load, `init()` calls `/
 ```
 
 plus `sha256`, `width`, `height`, `format`, `size`, `exif_present`. With the real model, `generators` and
-`human_detected` are `null` and `harm.level` is `"unknown"`, and the UI hides or labels those parts. Tracing
-(`traceSource`) and reporting (`submitReport`, `autoReport`) are still simulated.
+`human_detected` are `null` and `harm.level` is `"unknown"`, and the UI hides or labels those parts. `traceSource` sends the uploaded image to the local server's `/api/trace` endpoint only after the user clicks **Search web**. Configure SerpApi or Google Cloud Vision as described in `server/README.md`. Without a key, users can open Google Lens or Bing Visual Search from the trace screen and upload the same file manually. Those results stay on the external search site. Reporting (`submitReport`, `autoReport`) remains simulated.
 
 ### Auto-report
 

@@ -18,6 +18,7 @@ import hashlib
 import io
 import json
 import mimetypes
+import os
 import sys
 import threading
 import time
@@ -35,6 +36,7 @@ FRONTIER_MODEL = ROOT / "outputs" / "models" / "frontier" / "community_forensics
 FRONTIER_THRESHOLD = 0.65
 FALLBACK_THRESHOLD = 0.5
 MAX_BYTES = 20 * 1024 * 1024
+MAX_TRACE_BYTES = 7 * 1024 * 1024  # base64 must fit Vision's 10 MB JSON limit
 GENERATOR_SIZES = {128, 256, 512, 1024}
 
 
@@ -124,6 +126,8 @@ class Handler(BaseHTTPRequestHandler):
     predictor = None
     threshold = FALLBACK_THRESHOLD
     health: dict = {}
+    vision_api_key = ""
+    serpapi_api_key = ""
 
     def log_message(self, fmt, *args):  # quieter console
         sys.stderr.write("%s  %s\n" % (self.log_date_time_string(), fmt % args))
@@ -144,16 +148,39 @@ class Handler(BaseHTTPRequestHandler):
         self.serve_static(path)
 
     def do_POST(self):
-        if urlparse(self.path).path != "/api/analyze":
+        path = urlparse(self.path).path
+        if path not in {"/api/analyze", "/api/trace"}:
             return self.send_json(HTTPStatus.NOT_FOUND, {"error": "Unknown endpoint"})
-        if self.predictor is None:
+        if path == "/api/analyze" and self.predictor is None:
             return self.send_json(HTTPStatus.SERVICE_UNAVAILABLE, {"error": "Model is not loaded"})
+        if path == "/api/trace" and not (self.serpapi_api_key or self.vision_api_key):
+            return self.send_json(HTTPStatus.SERVICE_UNAVAILABLE, {
+                "error": "Source tracing is not configured. Set SERPAPI_API_KEY or GOOGLE_CLOUD_VISION_API_KEY and restart the server."})
         length = int(self.headers.get("Content-Length") or 0)
         if length <= 0:
             return self.send_json(HTTPStatus.BAD_REQUEST, {"error": "Send the image bytes in the request body"})
-        if length > MAX_BYTES:
-            return self.send_json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {"error": "Image is larger than 20 MB"})
+        limit = MAX_TRACE_BYTES if path == "/api/trace" and not self.serpapi_api_key else MAX_BYTES
+        if length > limit:
+            return self.send_json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {
+                "error": f"Image is too large for {'Google Cloud Vision (7 MB)' if limit == MAX_TRACE_BYTES else 'analysis or source search (20 MB)'}."})
         data = self.rfile.read(length)
+        if path == "/api/trace":
+            from web_trace import TraceError
+            try:
+                from PIL import Image
+                with Image.open(io.BytesIO(data)) as image:
+                    image.verify()
+                if self.serpapi_api_key:
+                    from serpapi_trace import search_image
+                    result = search_image(data, self.serpapi_api_key)
+                else:
+                    from web_trace import search_image
+                    result = search_image(data, self.vision_api_key)
+            except (OSError, ValueError) as error:
+                return self.send_json(HTTPStatus.BAD_REQUEST, {"error": f"Invalid image: {error}"})
+            except TraceError as error:
+                return self.send_json(HTTPStatus.BAD_GATEWAY, {"error": str(error)})
+            return self.send_json(HTTPStatus.OK, result)
         filename = unquote(self.headers.get("X-Filename") or "upload")[:200]
         try:
             result = analyze(data, filename, self.predictor, self.threshold, self.health.get("model", "model"))
@@ -209,6 +236,8 @@ def main(argv=None, predictor_factory=Predictor):
 
     Handler.predictor = predictor
     Handler.threshold = threshold
+    Handler.vision_api_key = os.environ.get("GOOGLE_CLOUD_VISION_API_KEY", "").strip()
+    Handler.serpapi_api_key = os.environ.get("SERPAPI_API_KEY", "").strip()
     Handler.health = {
         "status": "ok",
         "model": info.get("architecture") or args.detector,
@@ -228,7 +257,9 @@ def main(argv=None, predictor_factory=Predictor):
             "count": 1750,
         } if args.detector == "frontier" and checkpoint.resolve() == FRONTIER_MODEL.resolve() else None),
         "features": {"classification": True, "generator_attribution": False, "harm_assessment": False,
-                     "source_tracing": False, "report_submission": False},
+                     "source_tracing": bool(Handler.serpapi_api_key or Handler.vision_api_key), "report_submission": False},
+        "trace_provider": ("Google Lens via SerpApi" if Handler.serpapi_api_key else
+                           "Google Cloud Vision Web Detection" if Handler.vision_api_key else None),
     }
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     print(f"Model ready · threshold {threshold:.4f} ({threshold_source})")

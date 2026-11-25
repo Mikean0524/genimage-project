@@ -97,7 +97,7 @@
       <div class="view-head">
         <div>
           <h1>${s.phase === "scanning" ? "Examining image" : "Examination result"}</h1>
-          <p>${s.phase === "scanning" ? "The image stays on this device during the prototype. Nothing is uploaded." : "Review the verdict and signals before taking action. A score is evidence, not proof."}</p>
+          <p>${s.phase === "scanning" ? (API.live.on ? "The image is sent to the local model server for analysis." : "Demo mode uses a simulated score on this device.") : "Review the verdict and signals before taking action. A score is evidence, not proof."}</p>
         </div>
         ${s.phase === "result" ? `<button class="btn" data-act="new-scan">Scan another image</button>` : ""}
       </div>
@@ -144,8 +144,8 @@
               <div>
                 <div class="drop-circle">${ICON.upload}</div>
                 <h2>Drop an image to examine</h2>
-                <p>or click to choose a file. A ResNet-50 classifier trained on seven image generators checks it.</p>
-                <div class="formats">JPEG, PNG, WEBP or BMP · up to 20 MB · stays on this device</div>
+                <p>or click to choose a file. ${API.live.on ? esc(D.MODEL.name) : "A demo classifier"} checks it.</p>
+                <div class="formats">JPEG, PNG, WEBP or BMP · up to 20 MB · web search requires a separate click</div>
               </div>
             </label>
             <div class="samples">
@@ -193,7 +193,7 @@
       <span class="val">${pct(c.score)} AI</span></button>`;
   }
 
-  const LIVE_STAGES = ["Sending image to the model server", "Computing SHA-256 and reading metadata", "Running ResNet-50 classifier"];
+  const LIVE_STAGES = ["Sending image to the local model server", "Computing SHA-256 and reading metadata", "Running image detector"];
   const stages = () => (API.live.on ? LIVE_STAGES : STAGES);
   const STAGES = [
     "Reading file and computing SHA-256",
@@ -327,7 +327,7 @@
       if (act === "heat") { s.heat = !s.heat; renderScan(); }
       if (act === "copy-hash") copyText(s.result.sha256, "SHA-256 hash");
       if (act === "save-case") { await ensureCase(); toast(`Saved as ${s.caseId}`); }
-      if (act === "trace") { await ensureCase(); state.traceCaseId = s.caseId; state.trace = null; go("trace"); runTrace(); }
+      if (act === "trace") { await ensureCase(); state.traceCaseId = s.caseId; state.trace = null; go("trace"); }
       if (act === "report") { await ensureCase(); startReport(s.caseId); }
     }));
     bindAutoBanner();
@@ -454,12 +454,12 @@
     el.innerHTML = `<table>
       <thead><tr><th>Case</th><th>Status</th><th>Harm</th><th>AI score</th><th>Generator</th><th>Sightings</th><th>Analyst</th><th>Opened</th></tr></thead>
       <tbody>${rows.map((c) => `<tr data-case="${c.id}" tabindex="0">
-        <td><div class="case-cell"><img class="thumb" src="${c.thumb}" alt=""><div><div class="title">${esc(c.title)}</div><div class="id">${c.id}</div></div></div></td>
+        <td><div class="case-cell"><img class="thumb" src="${c.thumb}" alt=""><div><div class="title">${esc(c.title)}</div><div class="id">${c.id}${c.demo ? " · Sample case" : ""}</div></div></div></td>
         <td><span class="status ${c.status}"><i></i>${D.STATUSES[c.status]}</span>${c.autoReported ? ' <span class="tag tag-blue tag-plain">Auto</span>' : ""}</td>
         <td><span class="tag tag-${c.harm}">${harmLabel[c.harm]}</span></td>
         <td><span class="score-pill" style="color:${c.score >= D.MODEL.threshold ? "#ff5c7a" : "#5ce1c6"}">${c.score.toFixed(2)}</span></td>
         <td>${esc(c.generator)}</td>
-        <td class="mono">${c.sources}</td>
+        <td class="mono">${c.demo ? "Sample" : c.traceResult ? c.sources : "Not searched"}</td>
         <td>${esc(c.analyst)}</td>
         <td class="muted">${ago(c.created)}</td>
       </tr>`).join("")}</tbody></table>`;
@@ -482,7 +482,7 @@
     const log = [
       [created, "Image examined and case opened"],
       ...(c.status !== "new" ? [[created + 3.6e6 * 2, `Assigned to ${c.analyst}`]] : []),
-      ...(["traced", "reported"].includes(c.status) ? [[created + 3.6e6 * 6, `Source trace found ${c.sources} sightings`]] : []),
+      ...(c.traceResult ? [[created + 3.6e6 * 6, `Source search found ${c.sources} matching links`]] : []),
       ...(c.status === "reported" ? [[created + (c.autoReported ? 6e4 : 3.6e6 * 9), c.autoReported ? `Reported to Cyber Cell automatically · ${c.ref}` : `Complaint package prepared · ${c.ref}`]] : []),
       ...(c.status === "closed" ? [[created + 3.6e6 * 5, c.harm === "none" ? "Closed — image judged authentic" : "Closed — no further action"]] : [])
     ];
@@ -499,7 +499,7 @@
           <dt>Verdict</dt><dd>${c.score >= D.MODEL.threshold ? "AI-generated" : "Real"}</dd>
           <dt>Likely generator</dt><dd>${esc(c.generator)}</dd>
           <dt>Person shown</dt><dd>${c.human == null ? "Not assessed" : c.human ? "Yes" : "No"}</dd>
-          <dt>Online sightings</dt><dd>${c.sources}</dd>
+          <dt>Matching web links</dt><dd>${c.demo ? "Sample case" : c.traceResult ? c.sources : "Not searched"}</dd>
           <dt>Analyst</dt><dd>${esc(c.analyst)}</dd>
           ${c.ref ? `<dt>Report reference</dt><dd class="mono">${c.ref}</dd>` : ""}
         </dl>
@@ -507,7 +507,7 @@
           <ul class="log">${log.map(([t, txt]) => `<li><time>${fmtDate(new Date(Math.min(t, Date.now())).toISOString())}</time>${esc(txt)}</li>`).join("")}</ul></div>
       </div>
       <div class="drawer-foot">
-        ${c.sources ? `<button class="btn btn-primary" data-d="trace">${ICON.trace} View source trace</button>` : ""}
+        ${c.imageFile ? `<button class="btn btn-primary" data-d="trace">${ICON.trace} ${c.traceResult ? "View source search" : "Search web"}</button>` : ""}
         ${["high", "medium", "unknown"].includes(c.harm) && c.score >= D.MODEL.threshold ? `<button class="btn ${c.status === "reported" ? "" : "btn-danger"}" data-d="report">${ICON.shield} ${c.status === "reported" ? "View report" : "Report to Cyber Cell"}</button>` : ""}
         ${c.status !== "closed" ? `<button class="btn btn-ghost" data-d="close">Close case</button>` : ""}
       </div>`;
@@ -519,7 +519,7 @@
     dr.addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
     $$("[data-d]", dr).forEach((b) => b.addEventListener("click", () => {
       const a = b.dataset.d;
-      if (a === "trace") { state.traceCaseId = c.id; state.trace = null; go("trace"); runTrace(); }
+      if (a === "trace") { state.traceCaseId = c.id; state.trace = c.traceResult || null; go("trace"); }
       if (a === "report") { startReport(c.id); }
       if (a === "close") { c.status = "closed"; closeDrawer(); toast(`${c.id} closed`); if (location.hash === "#cases") drawCasesTable(); updateCount(); }
     }));
@@ -537,134 +537,89 @@
   // TRACE
   // =====================================================================
   function renderTrace() {
-    const traceable = D.CASES.filter((c) => c.sources > 0);
-    if (!state.traceCaseId) state.traceCaseId = traceable[0] && traceable[0].id;
-    const c = D.CASES.find((x) => x.id === state.traceCaseId);
+    const traceable = D.CASES.filter((c) => c.imageFile);
+    if (!traceable.some((c) => c.id === state.traceCaseId)) state.traceCaseId = traceable[0]?.id || null;
+    const c = traceable.find((item) => item.id === state.traceCaseId);
+    const ready = API.live.on && API.live.health?.features?.source_tracing;
     view.innerHTML = `
       <div class="view-head">
-        <div><h1>Source trace</h1><p>Where copies of the image appear online, ordered by when each was first seen. The earliest sighting is the most likely origin.</p><div class="sim-note" style="margin:12px 0 0;display:inline-block">Simulated — source tracing isn't built yet, so these sightings are sample data.</div></div>
-        <div class="picker">
-          <label class="sr-only" for="trace-case">Case</label>
-          <select class="input" id="trace-case">${traceable.map((x) => `<option value="${x.id}" ${x.id === state.traceCaseId ? "selected" : ""}>${x.id} — ${esc(x.title.slice(0, 40))}${x.title.length > 40 ? "…" : ""}</option>`).join("")}</select>
-          <button class="btn btn-primary" id="run-trace">${state.trace ? "Run again" : "Run trace"}</button>
-        </div>
+        <div><h1>Source search</h1><p>Find indexed pages with copies of an uploaded image. A match is not proof of who posted it first.</p></div>
+        ${c ? `<div class="picker"><label class="sr-only" for="trace-case">Case</label>
+          <select class="input" id="trace-case">${traceable.map((item) => `<option value="${esc(item.id)}" ${item.id === c.id ? "selected" : ""}>${esc(item.id)} - ${esc(item.title.slice(0, 40))}</option>`).join("")}</select>
+          <button class="btn btn-primary" id="run-trace" ${ready ? "" : "disabled"}>Search web</button></div>` : ""}
       </div>
-      <div id="trace-body"></div>`;
-    $("#trace-case").addEventListener("change", (e) => { state.traceCaseId = e.target.value; state.trace = null; renderTrace(); });
+      ${!c ? `<section class="panel"><div class="empty"><h3>No uploaded image yet</h3><p>Scan an image, save its case, then return here to search for copies.</p></div></section>` : `
+      ${ready ? `<div class="notice">Clicking Search web sends this image to ${esc(API.live.health.trace_provider)}. Search results cannot verify the original uploader or posting date.</div>` : ""}
+      ${!ready ? `<div class="notice">No automatic web search is configured. You can use a free SerpApi key for automatic Google Lens exact-match searches (see server/README.md), or search manually with Google Lens or Bing Visual Search. Open either site and upload the same image file you used for this case. Manual results appear on that site.</div>
+      <div class="row" style="gap:10px;flex-wrap:wrap;margin:16px 0">
+        <a class="btn btn-primary" href="https://www.google.com/" target="_blank" rel="noopener noreferrer">Open Google Lens</a>
+        <a class="btn" href="https://www.bing.com/images" target="_blank" rel="noopener noreferrer">Open Bing Visual Search</a>
+      </div>` : ""}
+      <div id="trace-body"></div>`}`;
+    if (!c) return;
+    $("#trace-case").addEventListener("change", (event) => {
+      state.traceCaseId = event.target.value;
+      state.trace = D.CASES.find((item) => item.id === state.traceCaseId)?.traceResult || null;
+      state.traceError = null;
+      renderTrace();
+    });
     $("#run-trace").addEventListener("click", runTrace);
     drawTraceBody(c);
   }
 
-  const RANGES = [["24h", 24], ["3d", 72], ["7d", 168], ["All", 0]];
-
   function drawTraceBody(c) {
     const el = $("#trace-body");
-    if (!el) return;
+    if (!el || !c) return;
     if (state.traceLoading) {
-      el.innerHTML = `<section class="panel"><div class="empty"><div class="specimen" style="max-width:360px;margin:0 auto 18px"><div class="specimen-img" style="aspect-ratio:16/9"><img src="${c.thumb}" alt="" style="filter:blur(14px)"><div class="sweep"></div></div></div><h3>Searching for copies of ${c.id}</h3><p>Matching perceptual hashes across indexed platforms…</p></div></section>`;
+      el.innerHTML = `<section class="panel"><div class="empty"><h3>Searching the web...</h3><p>Checking for full and partial image matches.</p></div></section>`;
       return;
     }
-    if (!state.trace) {
-      el.innerHTML = `<section class="panel"><div class="empty"><h3>No trace run yet for ${c.id}</h3><p>Run a trace to find where this image has been posted and its earliest known upload.</p><div style="margin-top:18px"><button class="btn btn-primary" id="run-trace-2">${ICON.trace} Run trace</button></div></div></section>`;
-      $("#run-trace-2").addEventListener("click", runTrace);
+    if (state.traceError) {
+      el.innerHTML = `<section class="panel"><div class="empty"><h3>Search unavailable</h3><p>${esc(state.traceError)}</p></div></section>`;
       return;
     }
-    const all = state.trace;
-    const origin = all[0];
-    const range = state.traceRange || "All";
-    const hours = (RANGES.find((r) => r[0] === range) || RANGES[3])[1];
-    const last = new Date(all[all.length - 1].firstSeen).getTime();
-    const t = hours ? all.filter((s) => last - new Date(s.firstSeen).getTime() <= hours * 3600e3) : all;
-    const totalReach = all.reduce((a, b) => a + b.reach, 0);
-    el.innerHTML = `
-      <div class="trace-layout">
-        <div class="stack">
-          <section class="origin-card">
-            <div class="muted" style="font-size:13px">Earliest known upload</div>
-            <div class="big">${esc(origin.platform)}</div>
-            <div class="url mono" style="overflow-wrap:anywhere">${esc(origin.url)}</div>
-            <dl class="kv" style="margin-top:16px">
-              <dt>First seen</dt><dd>${fmtDate(origin.firstSeen)} IST</dd>
-              <dt>Match</dt><dd>${pct(origin.similarity, 1)} · ${origin.variant}</dd>
-              <dt>Spread</dt><dd>${all.length - 1} later copies on ${new Set(all.map((x) => x.platform)).size} platforms</dd>
-              <dt>Reach</dt><dd>~${totalReach.toLocaleString("en-IN")} views</dd>
-            </dl>
-          </section>
-          <section class="panel spread">
-            <div class="panel-head"><h3>How it spread</h3>
-              <div class="pills" role="group" aria-label="Time range">${RANGES.map(([k]) => `<button data-range="${k}" aria-pressed="${k === range}">${k}</button>`).join("")}</div></div>
-            <div class="panel-pad" style="padding-top:4px">${t.length ? spreadChart(t, all) : `<p class="muted">No new sightings in this period. Choose a longer range.</p>`}</div>
-          </section>
-          <button class="btn btn-danger btn-lg" id="trace-report">${ICON.shield} Report to Cyber Cell with these sources</button>
-        </div>
-        <section class="panel">
-          <div class="panel-head"><div><h2>${t.length} of ${all.length} sightings</h2><p>${range === "All" ? "All time" : "Last " + range + " before the latest sighting"}</p></div>
-            <button class="btn btn-sm" id="copy-links">${ICON.copy} Copy links</button></div>
-          <ol class="timeline">
-            ${t.map((s) => { const i = all.indexOf(s); return `<li class="${i === 0 ? "origin" : ""}"><span class="n">${i + 1}</span>
-              <div><div class="where">${esc(s.platform)}${i === 0 ? ' <span class="tag tag-blue tag-plain" style="margin-left:6px">Probable origin</span>' : ""}</div>
-                <div class="url">${esc(s.url)}</div>
-                <div class="meta">${fmtDate(s.firstSeen)} · ${s.variant} · ~${s.reach.toLocaleString("en-IN")} views</div></div>
-              <div class="sim">${pct(s.similarity, 1)}<div class="muted">match</div></div></li>`; }).join("")}
-          </ol>
-        </section>
-      </div>`;
-    $("#copy-links").addEventListener("click", () => copyText(all.map((s) => `${s.firstSeen}\t${s.platform}\t${s.url}`).join("\n"), "Sighting links"));
-    $("#trace-report").addEventListener("click", () => startReport(c.id));
-    $$("[data-range]").forEach((b) => b.addEventListener("click", () => { state.traceRange = b.dataset.range; drawTraceBody(c); }));
+    const result = state.trace || c.traceResult;
+    if (!result) {
+      el.innerHTML = `<section class="panel"><div class="empty"><h3>No search run for this image</h3><p>${API.live.on && API.live.health?.features?.source_tracing ? "Use Search web above to check for indexed copies." : "Use Google Lens or Bing Visual Search above, then upload this image on their site."}</p></div></section>`;
+      return;
+    }
+    const matches = result.matches || [];
+    if (!matches.length) {
+      el.innerHTML = `<section class="panel"><div class="empty"><h3>No matching pages found</h3><p>${esc(result.provider)} found no indexed matches. This does not prove the image has never been posted.</p></div></section>`;
+      return;
+    }
+    el.innerHTML = `<section class="panel"><div class="panel-head"><div><h2>${matches.length} matching results</h2>
+      <p>${esc(result.provider)} - searched ${fmtDate(result.searched_at)} IST</p></div>
+      <button class="btn btn-sm" id="copy-links">${ICON.copy} Copy links</button></div>
+      <ol class="timeline">${matches.map((match, index) => `<li><span class="n">${index + 1}</span>
+        <div><div class="where">${esc(match.title || new URL(match.url).hostname)}
+          <span class="tag tag-blue tag-plain">${match.kind === "exact" ? "Lens exact match" : match.kind === "full" ? "Full match" : "Partial match"}</span></div>
+          <div class="url"><a href="${esc(match.url)}" target="_blank" rel="noopener noreferrer">${esc(match.url)}</a></div></div></li>`).join("")}</ol>
+      <div class="panel-pad"><p class="muted">Results have no verified upload date, view count, or original-source ranking.</p></div></section>`;
+    $("#copy-links").addEventListener("click", () => copyText(matches.map((match) => match.url).join("\n"), "Match links"));
   }
-
-  // Cumulative sightings: white line, soft gradient area, dotted grid, value labels on the right.
-  function spreadChart(t, all) {
-    const W = 460, H = 230, L = 10, R = 54, T = 16, B = 26;
-    const t0 = new Date(t[0].firstSeen).getTime();
-    const t1 = new Date(t[t.length - 1].firstSeen).getTime();
-    const start = all.indexOf(t[0]);
-    const maxN = start + t.length, minN = Math.max(0, start);
-    const x = (ts) => L + ((ts - t0) / Math.max(t1 - t0, 1)) * (W - L - R);
-    const y = (n) => T + (1 - (n - minN) / Math.max(maxN - minN, 1)) * (H - T - B);
-    const pts = t.map((s, i) => [x(new Date(s.firstSeen).getTime()), y(start + i + 1)]);
-    let d = `M ${pts[0][0]} ${y(minN)}`;
-    pts.forEach(([px, py], i) => {
-      const [qx, qy] = i ? pts[i - 1] : [pts[0][0], y(minN)];
-      const mx = (qx + px) / 2;
-      d += ` C ${mx} ${qy}, ${mx} ${py}, ${px} ${py}`;
-    });
-    const area = `${d} L ${pts[pts.length - 1][0]} ${H - B} L ${pts[0][0]} ${H - B} Z`;
-    const ticks = 4;
-    const grid = Array.from({ length: ticks + 1 }, (_, k) => {
-      const n = minN + ((maxN - minN) * k) / ticks;
-      const yy = y(n);
-      const isLast = k === ticks;
-      return `<line x1="${L}" x2="${W - R + 4}" y1="${yy}" y2="${yy}" stroke="#fff" stroke-opacity="${isLast ? 0.9 : 0.28}" stroke-width="2" stroke-linecap="round" stroke-dasharray="0 9"/>` +
-        (isLast ? `<rect x="${W - R + 8}" y="${yy - 11}" width="44" height="22" rx="11" fill="#fff"/><text x="${W - R + 30}" y="${yy + 4}" text-anchor="middle" font-size="11.5" font-weight="700" fill="#121218">${Math.round(n)}</text>`
-          : `<text x="${W - R + 30}" y="${yy + 4}" text-anchor="middle" font-size="11" fill="#868899">${Math.round(n)}</text>`);
-    }).join("");
-    const [ex, ey] = pts[pts.length - 1];
-    return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Cumulative sightings over time" style="font-family:'Plus Jakarta Sans',sans-serif">
-      <defs><linearGradient id="ga" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".45"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs>
-      ${grid}
-      <path d="${area}" fill="url(#ga)"/>
-      <path d="${d}" fill="none" stroke="#fff" stroke-width="2.2"/>
-      <circle cx="${pts[0][0]}" cy="${pts[0][1]}" r="9" fill="#fff" fill-opacity=".25"/><circle cx="${pts[0][0]}" cy="${pts[0][1]}" r="5" fill="#fff"/>
-      <circle cx="${ex}" cy="${ey}" r="5" fill="#3461ff" stroke="#fff" stroke-width="2"/>
-      <text x="${L}" y="${H - 6}" fill="#868899" font-size="11">${fmtDay(t[0].firstSeen)}</text>
-      <text x="${W - R}" y="${H - 6}" fill="#868899" font-size="11" text-anchor="end">${fmtDay(t[t.length - 1].firstSeen)}</text></svg>`;
-  }
-
 
   async function runTrace() {
-    if (!state.traceCaseId) return;
     const id = state.traceCaseId;
-    state.traceLoading = true; state.trace = null; state.traceRange = "All";
-    if (location.hash === "#trace") drawTraceBody(D.CASES.find((x) => x.id === id));
-    const res = await API.traceSource(id);
-    state.traceLoading = false;
-    if (state.traceCaseId !== id) return;
-    state.trace = res;
-    const c = D.CASES.find((x) => x.id === id);
-    if (c && c.status === "new" || c && c.status === "review") c.status = "traced";
-    if (location.hash === "#trace") { renderTrace(); toast(`Found ${res.length} sightings`); }
+    if (!id || state.traceLoading) return;
+    state.traceLoading = true;
+    state.traceError = null;
+    renderTrace();
+    try {
+      const result = await API.traceSource(id);
+      if (state.traceCaseId !== id) return;
+      const c = D.CASES.find((item) => item.id === id);
+      c.traceResult = result;
+      c.sources = result.matches.length;
+      if (c.sources && ["new", "review"].includes(c.status)) c.status = "traced";
+      state.trace = result;
+      toast(`Found ${result.matches.length} matching results`);
+    } catch (error) {
+      if (state.traceCaseId === id) state.traceError = error.message || "Source search failed.";
+    } finally {
+      state.traceLoading = false;
+      if (location.hash === "#trace") renderTrace();
+    }
   }
 
   // =====================================================================
@@ -722,7 +677,7 @@
 
   function reportStepHTML(R, c) {
     const I = R.incident, P = R.person;
-    const trace = D.buildTrace(c);
+    const trace = c.traceMatches || [];
     if (R.step === 1) return `
       <h2>What happened?</h2>
       <div class="field" data-f="type"><label for="f-type">Type of incident</label>
@@ -738,8 +693,8 @@
         <textarea class="input" id="f-desc" maxlength="2000" placeholder="Where you saw the image, who shared it, any messages or demands that came with it.">${esc(I.description)}</textarea>
         <span class="hint"><span id="desc-count">${I.description.length}</span> / 2000 characters. At least 30.</span>
         <span class="error">Add a few more details — at least 30 characters.</span></div>
-      ${trace.length ? `<div class="field"><span class="label">Where was it posted? <span class="muted">(from the source trace)</span></span>
-        <div class="stack" style="gap:8px">${trace.slice(0, 6).map((s, i) => `<label class="check"><input type="checkbox" name="plat" value="${esc(s.url)}" ${I.platforms.length === 0 || I.platforms.includes(s.url) ? "checked" : ""}><span>${esc(s.platform)} <span class="mono muted">${esc(s.url)}</span>${i === 0 ? ' <span class="tag tag-blue tag-plain">origin</span>' : ""}</span></label>`).join("")}</div></div>` : ""}`;
+      ${trace.length ? `<div class="field"><span class="label">Matching web pages <span class="muted">(original source unverified)</span></span>
+        <div class="stack" style="gap:8px">${trace.slice(0, 6).map((s) => `<label class="check"><input type="checkbox" name="plat" value="${esc(s.url)}" ${I.platforms.length === 0 || I.platforms.includes(s.url) ? "checked" : ""}><span>${esc(s.title || new URL(s.url).hostname)} <span class="mono muted">${esc(s.url)}</span></span></label>`).join("")}</div></div>` : ""}`;
 
     if (R.step === 2) return `
       <h2>Your contact details</h2>
@@ -763,7 +718,7 @@
       <ul class="evidence-list">
         <li><div>Original image<div class="sub mono">SHA-256 ${scan ? scan.sha256 : (c.sha256 || fakeHash(c.id))}</div></div><span class="tag tag-ok">Attached</span></li>
         <li><div>Detection result<div class="sub">AI score ${c.score.toFixed(3)} · threshold ${D.MODEL.threshold.toFixed(3)} · ${esc(D.MODEL.name)}</div></div><span class="tag tag-ok">Attached</span></li>
-        <li><div>Source trace<div class="sub">${sel.length} sighting${sel.length === 1 ? "" : "s"}${sel[0] ? ", earliest " + fmtDate(sel[0].firstSeen) : ""}</div></div><span class="tag ${sel.length ? "tag-ok" : "tag-plain"}">${sel.length ? "Attached" : "None"}</span></li>
+        <li><div>Source search<div class="sub">${sel.length} matching link${sel.length === 1 ? "" : "s"}</div></div><span class="tag ${sel.length ? "tag-ok" : "tag-plain"}">${sel.length ? "Attached" : "None"}</span></li>
         ${R.extraFiles.map((f, i) => `<li><div>${esc(f.name)}<div class="sub">${fmtBytes(f.size)} · added by you</div></div><button type="button" class="btn btn-sm btn-ghost" data-rm="${i}">Remove</button></li>`).join("")}
       </ul>
       <div class="field"><label for="f-extra">Add screenshots of chats, posts or demands</label>
@@ -779,7 +734,7 @@
       <div class="review-block"><h3>Your details <button type="button" class="btn btn-sm btn-ghost" data-edit="2">Edit</button></h3>
         <dl class="kv"><dt>Name</dt><dd>${esc(P.name)}</dd><dt>Mobile</dt><dd>${esc(P.phone)}</dd><dt>Email</dt><dd>${esc(P.email)}</dd><dt>Location</dt><dd>${esc([P.city, P.state].filter(Boolean).join(", "))}</dd></dl></div>
       <div class="review-block"><h3>Evidence <button type="button" class="btn btn-sm btn-ghost" data-edit="3">Edit</button></h3>
-        <dl class="kv"><dt>Items</dt><dd>Original image, detection result, source trace${R.extraFiles.length ? `, ${R.extraFiles.length} file${R.extraFiles.length > 1 ? "s" : ""} from you` : ""}</dd></dl></div>
+        <dl class="kv"><dt>Items</dt><dd>Original image, detection result${trace.length ? ", source search matches" : ""}${R.extraFiles.length ? `, ${R.extraFiles.length} file${R.extraFiles.length > 1 ? "s" : ""} from you` : ""}</dd></dl></div>
       <div class="field" data-f="consentTrue"><label class="check"><input type="checkbox" id="f-c1" ${P.consentTrue ? "checked" : ""}><span>The information I have given is true to the best of my knowledge.</span></label><span class="error">Confirm the information is true to continue.</span></div>
       <div class="field" data-f="consentShare"><label class="check"><input type="checkbox" id="f-c2" ${P.consentShare ? "checked" : ""}><span>I agree to share this evidence package with law enforcement for investigation.</span></label><span class="error">Consent is needed to share the evidence.</span></div>`;
   }
@@ -850,7 +805,7 @@
   function renderReportDone(c) {
     const R = state.report;
     const I = R.incident, P = R.person;
-    const trace = D.buildTrace(c);
+    const trace = c.traceMatches || [];
     const summary = [
       `Complaint reference: ${R.done.ref}`,
       `Case: ${c.id} — ${c.title}`,
@@ -859,7 +814,7 @@
       `Detection: AI score ${c.score.toFixed(3)} (threshold ${D.MODEL.threshold.toFixed(3)}, ${D.MODEL.name})`,
       `Image SHA-256: ${c.sha256 || (state.scan.caseId === c.id && state.scan.result ? state.scan.result.sha256 : fakeHash(c.id))}`,
       I.description ? `Description: ${I.description}` : "",
-      trace.length ? "Where it was posted:\n" + trace.map((s) => `  - ${s.platform}: ${s.url} (first seen ${s.firstSeen})`).join("\n") : "",
+      trace.length ? "Matching web links (original source unverified):\n" + trace.map((s) => `  - ${s.url} (${s.kind} match)`).join("\n") : "",
       P.name ? `Complainant: ${P.name}, ${P.phone}, ${P.email}, ${[P.city, P.state].filter(Boolean).join(", ")}` : ""
     ].filter(Boolean).join("\n");
     view.innerHTML = `
@@ -928,7 +883,7 @@
               <li>SHA-256 evidence hashing <span class="tag tag-ok">In pipeline</span></li>
               <li>Generator attribution (7 sources) <span class="tag tag-medium">Planned</span></li>
               <li>Person detection &amp; harm assessment <span class="tag tag-medium">Planned</span></li>
-              <li>Online source tracing <span class="tag tag-medium">Planned</span></li>
+              <li>Online source matching <span class="tag ${API.live.health?.features?.source_tracing ? "tag-ok" : "tag-medium"}">${API.live.health?.features?.source_tracing ? "Available" : "Needs API key"}</span></li>
               <li>Cyber Cell report packaging <span class="tag tag-medium">Planned</span></li>
             </ul></section>
         </div>

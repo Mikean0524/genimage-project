@@ -84,44 +84,7 @@
     { id: "GIF-2026-0140", title: "Celebrity endorsement image in investment ad", status: "traced", score: 0.86, harm: "medium", generator: "Midjourney", human: true, created: hrs(146), sources: 14, analyst: "A. Verma", harmCats: [2] },
     { id: "GIF-2026-0139", title: "Matrimonial profile photo reported by user", status: "closed", score: 0.31, harm: "low", generator: "VQDM", human: true, created: hrs(171), sources: 1, analyst: "S. Iyer", harmCats: [] }
   ];
-  CASES.forEach((c, i) => { c.thumb = placeholderImage(1000 + i * 37); });
-
-  // Fictional platforms. URLs use the reserved .example domain.
-  const PLATFORMS = [
-    { name: "Messaging group", host: "chat.relay.example" },
-    { name: "Image board", host: "boards.pinwall.example" },
-    { name: "Social feed", host: "feed.circlr.example" },
-    { name: "Anonymous paste", host: "paste.drop.example" },
-    { name: "Short-video app", host: "clips.loop.example" },
-    { name: "Forum thread", host: "forum.adda.example" },
-    { name: "Image host", host: "img.snaphost.example" },
-    { name: "Classifieds", host: "ads.mandi.example" }
-  ];
-  const VARIANTS = ["Exact copy", "Resized", "Cropped", "Recompressed", "Screenshot", "Watermark removed"];
-
-  function buildTrace(caseObj) {
-    const seed = parseInt(caseObj.id.replace(/\D/g, ""), 10) || 7;
-    const r = rng(seed * 97);
-    const n = Math.max(caseObj.sources, 0);
-    const created = new Date(caseObj.created).getTime();
-    const out = [];
-    for (let i = 0; i < n; i++) {
-      const p = PLATFORMS[Math.floor(r() * PLATFORMS.length)];
-      const hoursBefore = 6 + r() * 220;
-      const path = Math.floor(r() * 1e6).toString(36);
-      out.push({
-        platform: p.name,
-        url: `https://${p.host}/${["p", "t", "i", "s"][i % 4]}/${path}${i}`,
-        firstSeen: new Date(created - hoursBefore * 3600 * 1000).toISOString(),
-        similarity: i === 0 ? 0.99 : 0.82 + r() * 0.17,
-        variant: i === 0 ? "Exact copy" : VARIANTS[Math.floor(r() * VARIANTS.length)],
-        reach: Math.floor(40 + r() * 4000)
-      });
-    }
-    out.sort((a, b) => new Date(a.firstSeen) - new Date(b.firstSeen));
-    if (out[0]) { out[0].similarity = 0.993; out[0].variant = "Exact copy"; }
-    return out;
-  }
+  CASES.forEach((c, i) => { c.thumb = placeholderImage(1000 + i * 37); c.demo = true; });
 
   const INDIAN_STATES = ["Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Delhi", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jammu & Kashmir", "Jharkhand", "Karnataka", "Kerala", "Ladakh", "Madhya Pradesh", "Maharashtra", "Manipur", "Meghalaya", "Mizoram", "Nagaland", "Odisha", "Puducherry", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal", "Chandigarh", "Other union territory"];
 
@@ -134,5 +97,5 @@
     "Other"
   ];
 
-  window.GI_DATA = { rng, placeholderImage, GENERATORS, MODEL, STATUSES, HARM_CATEGORIES, CASES, buildTrace, INDIAN_STATES, INCIDENT_TYPES, PLATFORMS };
+  window.GI_DATA = { rng, placeholderImage, GENERATORS, MODEL, STATUSES, HARM_CATEGORIES, CASES, INDIAN_STATES, INCIDENT_TYPES };
 })();

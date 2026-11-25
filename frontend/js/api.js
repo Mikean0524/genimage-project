@@ -104,6 +104,7 @@
     if (!res.ok) throw new Error(data.error || `The model server returned an error (${res.status}).`);
     return {
       ...data,
+      imageFile: file,
       url: URL.createObjectURL(file),
       generators: null,                          // not produced by the model yet
       human_detected: null,                      // not produced by the model yet
@@ -183,10 +184,12 @@
       generator: result.assessment !== "AI-generated" ? "—" : result.generators ? result.generators[0].name : "Not assessed",
       human: result.human_detected,
       created: new Date().toISOString(),
-      sources: result.assessment === "AI-generated" ? 4 + Math.floor(result.ai_score_uncalibrated * 6) : 0,
+      sources: 0,
       analyst: "You",
       harmCats: [],
       thumb: result.url,
+      imageFile: result.imageFile || null,
+      traceMatches: null,
       sha256: result.sha256,
       local: true
     };
@@ -195,10 +198,24 @@
   }
 
   async function traceSource(caseId) {
-    await wait(1400);
     const c = D.CASES.find((x) => x.id === caseId);
     if (!c) throw new Error("Case not found");
-    return D.buildTrace(c);
+    if (!live.on) throw new Error("Start the local model server to search the web for matching images.");
+    if (!live.health?.features?.source_tracing) throw new Error("Source tracing needs a SerpApi or Google Cloud Vision API key on the server. See server/README.md.");
+    if (!c.imageFile) throw new Error("This sample case has no uploaded image. Upload an image to run a real source search.");
+    let response;
+    try {
+      response = await fetch(API_BASE + "/api/trace", {
+        method: "POST", headers: { "Content-Type": c.imageFile.type || "application/octet-stream" }, body: c.imageFile
+      });
+    } catch (error) {
+      throw new Error("Could not reach the local source-tracing server.");
+    }
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || `Source search failed (${response.status}).`);
+    c.traceMatches = result.matches;
+    c.sources = result.matches.length;
+    return result;
   }
 
   async function submitReport(payload) {

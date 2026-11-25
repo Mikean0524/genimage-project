@@ -12,6 +12,8 @@ python server/app.py
 
 Open http://127.0.0.1:8000. The old project-trained ResNet remains available with `python server/app.py --detector resnet`. The frontier model uses a fixed 0.65 threshold and is a screening tool, not proof of image origin. See [server/README.md](server/README.md) for its measured results and source.
 
+Optional automatic source matching can use a free SerpApi key (`SERPAPI_API_KEY`) for Google Lens exact matches, or Google Cloud Vision Web Detection (`GOOGLE_CLOUD_VISION_API_KEY`) for full and partial matches. The web search button stays disabled without either key. The image is sent to the selected provider only when you click **Search web**. Without a key, the Source search screen links to Google Lens and Bing Visual Search for a manual upload. See [server/README.md](server/README.md) for setup and limits.
+
 ## Original GenImage experiment
 
 Read [the project plan](docs/PROJECT_PLAN.md) before running stages. Task 1 inspection needs an explicit extracted dataset root:
